@@ -1,0 +1,35 @@
+server:
+  port: 4101
+
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://gz-cdb-bq7gk3k5.sql.tencentcdb.com:63606/d_hosq_traegj_20260115?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai
+    username: root
+    password: Yiguo9527_
+  redis:
+    host: 81.71.44.180
+    port: 6379
+    password: 
+    database: 0
+    timeout: 3000ms
+    lettuce:
+      pool:
+        max-active: 8
+        max-wait: -1ms
+        max-idle: 8
+        min-idle: 0
+  mvc:
+    pathmatch:
+      matching-strategy: ant_path_matcher
+  
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.medical.qc.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+logging:
+  level:
+    com.medical.qc: debug

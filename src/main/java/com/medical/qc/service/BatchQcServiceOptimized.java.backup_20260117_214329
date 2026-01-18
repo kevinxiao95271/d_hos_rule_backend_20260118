@@ -1,0 +1,424 @@
+package com.medical.qc.service;
+
+import com.medical.qc.dto.QcRequest;
+import com.medical.qc.entity.*;
+import com.medical.qc.mapper.*;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.annotation.Async;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.stream.Collectors;
+
+@Slf4j
+@Service
+public class BatchQcServiceOptimized {
+    
+    @Autowired
+    private QcRuleMapper ruleMapper;
+    
+    @Autowired
+    private MedicalRecordMapper recordMapper;
+    
+    @Autowired
+    private QcResultMapper resultMapper;
+    
+    @Autowired
+    private RuleEngineService ruleEngine;
+    
+    @Autowired
+    private DictCacheService dictCacheService;
+    
+    // 并行处理线程池
+    private final ExecutorService parallelExecutor = Executors.newFixedThreadPool(8);
+    
+    // 批量处理大小
+    private static final int PARALLEL_BATCH_SIZE = 12; // 96/8 = 12个病案/线程
+    private static final int DB_BATCH_SIZE = 50; // 数据库批量操作大小
+    
+    @Async("qcTaskExecutor")
+    public void executeBatchCheckAsyncOptimized(QcRequest request, String batchKey) {
+        log.info("开始优化的异步批量质控任务: {}", batchKey);
+        
+        long startTime = System.currentTimeMillis();
+        
+        try {
+            // 初始化任务状态
+            KiroQcBatchSummary summary = initBatchSummary(request, batchKey);
+            log.info("初始化批次摘要完成: {}", batchKey);
+            
+            // 预热Redis缓存
+            log.info("开始预热Redis缓存...");
+            dictCacheService.reloadAllDictCache();
+            log.info("Redis缓存预热完成");
+            
+            // 获取病案数据
+            log.info("开始获取病案数据...");
+            Map<String, Map<String, Object>> records = recordMapper.findRecords(
+                request.getYear(), request.getQuarter(), request.getMonth(), null, null);
+            
+            int total = records.size();
+            log.info("批次 {} 共 {} 条病案", batchKey, total);
+            
+            if (total == 0) {
+                log.warn("批次 {} 没有找到病案数据", batchKey);
+                summary.setStatus("completed");
+                summary.setProgress(100);
+                summary.setEndTime(new Date());
+                resultMapper.saveBatchSummary(summary);
+                return;
+            }
+            
+            // 一次性加载所有活跃规则
+            log.info("开始加载活跃规则...");
+            List<KiroQcRule> rules = ruleMapper.findActiveRules();
+            log.info("批次 {} 使用 {} 条活跃规则", batchKey, rules.size());
+            
+            // 使用简化的串行处理（先确保逻辑正确）
+            log.info("开始处理病案数据...");
+            processBatchRecordsSerial(records, rules, request, summary, batchKey);
+            
+            // 完成任务
+            long endTime = System.currentTimeMillis();
+            long totalTime = endTime - startTime;
+            
+            summary.setStatus("completed");
+            summary.setProgress(100);
+            summary.setEndTime(new Date());
+            resultMapper.saveBatchSummary(summary);
+            
+            log.info("优化批量质控任务完成: {}, 共处理 {} 条病案, 耗时 {}ms ({:.1f}分钟)", 
+                batchKey, total, totalTime, totalTime / 60000.0);
+            
+        } catch (Exception e) {
+            log.error("优化批量质控任务失败: {} - {}", batchKey, e.getMessage(), e);
+            updateBatchStatus(batchKey, "failed", 0);
+        }
+    }
+    
+    private KiroQcBatchSummary initBatchSummary(QcRequest request, String batchKey) {
+        KiroQcBatchSummary summary = new KiroQcBatchSummary();
+        summary.setBatchKey(batchKey);
+        summary.setPeriodType(request.getPeriodType());
+        summary.setCheckYear(request.getYear());
+        summary.setCheckQuarter(request.getQuarter());
+        summary.setCheckMonth(request.getMonth());
+        summary.setStatus("processing");
+        summary.setProgress(0);
+        summary.setCaseCount(0);
+        summary.setTotalDefectCount(0);
+        summary.setAvgDefect(BigDecimal.ZERO);
+        summary.setAvgScore(new BigDecimal("100"));
+        summary.setStartTime(new Date());
+        resultMapper.saveBatchSummary(summary);
+        return summary;
+    }
+    
+    private void processBatchRecordsSerial(Map<String, Map<String, Object>> records, 
+                                          List<KiroQcRule> rules,
+                                          QcRequest request,
+                                          KiroQcBatchSummary summary,
+                                          String batchKey) {
+        
+        log.info("开始串行处理 {} 个病案", records.size());
+        
+        List<KiroQcCaseResult> allCaseResults = new ArrayList<>();
+        List<KiroQcDefectDetail> allDefectDetails = new ArrayList<>();
+        
+        int processed = 0;
+        int total = records.size();
+        
+        for (Map<String, Object> record : records.values()) {
+            try {
+                String a48 = record.get("A48").toString();
+                String a49 = record.get("A49").toString();
+                String mrKey = a48 + "_" + a49;
+                
+                // 执行规则检查
+                List<RuleEngineService.RuleViolation> violations = 
+                    ruleEngine.checkRecord(record, rules);
+                
+                // 计算得分
+                BigDecimal totalDeduct = violations.stream()
+                    .map(v -> v.deductScore)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+                
+                BigDecimal finalScore = new BigDecimal("100").subtract(totalDeduct);
+                if (finalScore.compareTo(BigDecimal.ZERO) < 0) {
+                    finalScore = BigDecimal.ZERO;
+                }
+                
+                // 创建病案结果
+                KiroQcCaseResult caseResult = createCaseResult(record, request, 
+                    violations.size(), totalDeduct, finalScore);
+                allCaseResults.add(caseResult);
+                
+                // 创建缺陷明细
+                for (RuleEngineService.RuleViolation violation : violations) {
+                    KiroQcDefectDetail detail = createDefectDetail(mrKey, a48, a49, violation);
+                    allDefectDetails.add(detail);
+                }
+                
+                processed++;
+                
+                // 每处理10个病案更新一次进度
+                if (processed % 10 == 0 || processed == total) {
+                    int progress = (processed * 100) / total;
+                    updateBatchProgress(batchKey, progress);
+                    log.info("批次 {} 进度: {}/{} ({}%)", batchKey, processed, total, progress);
+                }
+                
+            } catch (Exception e) {
+                log.error("处理病案失败: {} - {}", record.get("A48") + "_" + record.get("A49"), e.getMessage());
+            }
+        }
+        
+        // 批量保存结果
+        log.info("开始保存结果: {} 个病案结果, {} 个缺陷明细", 
+            allCaseResults.size(), allDefectDetails.size());
+        
+        saveBatchResultsOptimized(Arrays.asList(new BatchProcessResult(allCaseResults, allDefectDetails)));
+        
+        // 更新最终统计
+        updateFinalStatistics(summary, Arrays.asList(new BatchProcessResult(allCaseResults, allDefectDetails)));
+        
+        log.info("串行处理完成，共处理 {} 个病案", processed);
+    }
+    
+    private void updateBatchProgress(String batchKey, int progress) {
+        try {
+            KiroQcBatchSummary summary = new KiroQcBatchSummary();
+            summary.setBatchKey(batchKey);
+            summary.setProgress(progress);
+            resultMapper.saveBatchSummary(summary);
+        } catch (Exception e) {
+            log.error("更新批次进度失败: {} - {}", batchKey, e.getMessage());
+        }
+    }
+    
+    private void processBatchRecordsParallel(Map<String, Map<String, Object>> records, 
+                                           List<KiroQcRule> rules,
+                                           QcRequest request,
+                                           KiroQcBatchSummary summary,
+                                           String batchKey) {
+        
+        // 将病案分组进行并行处理
+        List<Map<String, Object>> recordList = new ArrayList<>(records.values());
+        List<List<Map<String, Object>>> batches = partitionList(recordList, PARALLEL_BATCH_SIZE);
+        
+        log.info("将 {} 个病案分为 {} 个批次并行处理", recordList.size(), batches.size());
+        
+        // 创建并行任务
+        List<CompletableFuture<BatchProcessResult>> futures = batches.stream()
+            .map(batch -> CompletableFuture.supplyAsync(() -> 
+                processBatch(batch, rules, request), parallelExecutor))
+            .collect(Collectors.toList());
+        
+        // 等待所有批次完成
+        List<BatchProcessResult> batchResults = futures.stream()
+            .map(CompletableFuture::join)
+            .collect(Collectors.toList());
+        
+        // 批量保存所有结果
+        saveBatchResultsOptimized(batchResults);
+        
+        // 更新最终统计
+        updateFinalStatistics(summary, batchResults);
+    }
+    
+    private BatchProcessResult processBatch(List<Map<String, Object>> records, 
+                                          List<KiroQcRule> rules, 
+                                          QcRequest request) {
+        
+        List<KiroQcCaseResult> caseResults = new ArrayList<>();
+        List<KiroQcDefectDetail> defectDetails = new ArrayList<>();
+        
+        for (Map<String, Object> record : records) {
+            try {
+                String a48 = record.get("A48").toString();
+                String a49 = record.get("A49").toString();
+                String mrKey = a48 + "_" + a49;
+                
+                // 执行规则检查（使用预加载的规则）
+                List<RuleEngineService.RuleViolation> violations = 
+                    ruleEngine.checkRecord(record, rules);
+                
+                // 计算得分
+                BigDecimal totalDeduct = violations.stream()
+                    .map(v -> v.deductScore)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+                
+                BigDecimal finalScore = new BigDecimal("100").subtract(totalDeduct);
+                if (finalScore.compareTo(BigDecimal.ZERO) < 0) {
+                    finalScore = BigDecimal.ZERO;
+                }
+                
+                // 创建病案结果
+                KiroQcCaseResult caseResult = createCaseResult(record, request, 
+                    violations.size(), totalDeduct, finalScore);
+                caseResults.add(caseResult);
+                
+                // 创建缺陷明细
+                for (RuleEngineService.RuleViolation violation : violations) {
+                    KiroQcDefectDetail detail = createDefectDetail(mrKey, a48, a49, violation);
+                    defectDetails.add(detail);
+                }
+                
+            } catch (Exception e) {
+                log.error("处理病案失败: {}", record.get("A48") + "_" + record.get("A49"), e);
+            }
+        }
+        
+        return new BatchProcessResult(caseResults, defectDetails);
+    }
+    
+    private KiroQcCaseResult createCaseResult(Map<String, Object> record, 
+                                            QcRequest request,
+                                            int defectCount,
+                                            BigDecimal totalDeduct,
+                                            BigDecimal finalScore) {
+        String a48 = record.get("A48").toString();
+        String a49 = record.get("A49").toString();
+        String b15 = record.get("B15") != null ? record.get("B15").toString() : null;
+        
+        KiroQcCaseResult caseResult = new KiroQcCaseResult();
+        caseResult.setMrKey(a48 + "_" + a49);
+        caseResult.setA48(a48);
+        caseResult.setA49(a49);
+        caseResult.setB15(b15);
+        caseResult.setCheckYear(request.getYear());
+        caseResult.setCheckQuarter(request.getQuarter());
+        caseResult.setCheckMonth(request.getMonth());
+        caseResult.setDefectCount(defectCount);
+        caseResult.setTotalDeduct(totalDeduct);
+        caseResult.setFinalScore(finalScore);
+        
+        return caseResult;
+    }
+    
+    private KiroQcDefectDetail createDefectDetail(String mrKey, String a48, String a49, 
+                                                RuleEngineService.RuleViolation violation) {
+        KiroQcDefectDetail detail = new KiroQcDefectDetail();
+        detail.setMrKey(mrKey);
+        detail.setA48(a48);
+        detail.setA49(a49);
+        detail.setRuleId(violation.ruleId);
+        detail.setRuleCode(violation.ruleCode);
+        detail.setFieldCode(violation.fieldCode);
+        detail.setFieldName(violation.fieldName);
+        detail.setActualValue(violation.actualValue);
+        detail.setExpectedValue(violation.expectedValue);
+        detail.setRuleDescription(violation.ruleDescription);
+        detail.setDeductScore(violation.deductScore);
+        
+        return detail;
+    }
+    
+    @Transactional
+    private void saveBatchResultsOptimized(List<BatchProcessResult> batchResults) {
+        // 合并所有结果
+        List<KiroQcCaseResult> allCaseResults = batchResults.stream()
+            .flatMap(result -> result.caseResults.stream())
+            .collect(Collectors.toList());
+        
+        List<KiroQcDefectDetail> allDefectDetails = batchResults.stream()
+            .flatMap(result -> result.defectDetails.stream())
+            .collect(Collectors.toList());
+        
+        log.info("批量保存结果: {} 个病案结果, {} 个缺陷明细", 
+            allCaseResults.size(), allDefectDetails.size());
+        
+        // 批量保存病案结果
+        if (!allCaseResults.isEmpty()) {
+            for (int i = 0; i < allCaseResults.size(); i += DB_BATCH_SIZE) {
+                int endIndex = Math.min(i + DB_BATCH_SIZE, allCaseResults.size());
+                List<KiroQcCaseResult> batch = allCaseResults.subList(i, endIndex);
+                
+                for (KiroQcCaseResult result : batch) {
+                    resultMapper.saveCaseResult(result);
+                }
+            }
+        }
+        
+        // 批量保存缺陷明细
+        if (!allDefectDetails.isEmpty()) {
+            for (int i = 0; i < allDefectDetails.size(); i += DB_BATCH_SIZE) {
+                int endIndex = Math.min(i + DB_BATCH_SIZE, allDefectDetails.size());
+                List<KiroQcDefectDetail> batch = allDefectDetails.subList(i, endIndex);
+                
+                for (KiroQcDefectDetail detail : batch) {
+                    resultMapper.saveDefectDetail(detail);
+                }
+            }
+        }
+    }
+    
+    private void updateFinalStatistics(KiroQcBatchSummary summary, 
+                                     List<BatchProcessResult> batchResults) {
+        int totalCases = batchResults.stream()
+            .mapToInt(result -> result.caseResults.size())
+            .sum();
+        
+        int totalDefects = batchResults.stream()
+            .mapToInt(result -> result.defectDetails.size())
+            .sum();
+        
+        BigDecimal totalScore = batchResults.stream()
+            .flatMap(result -> result.caseResults.stream())
+            .map(KiroQcCaseResult::getFinalScore)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+        
+        BigDecimal avgScore = totalCases > 0 ? 
+            totalScore.divide(new BigDecimal(totalCases), 2, BigDecimal.ROUND_HALF_UP) : 
+            BigDecimal.ZERO;
+        
+        BigDecimal avgDefect = totalCases > 0 ? 
+            new BigDecimal(totalDefects).divide(new BigDecimal(totalCases), 4, BigDecimal.ROUND_HALF_UP) : 
+            BigDecimal.ZERO;
+        
+        summary.setCaseCount(totalCases);
+        summary.setTotalDefectCount(totalDefects);
+        summary.setAvgDefect(avgDefect);
+        summary.setAvgScore(avgScore);
+        
+        resultMapper.saveBatchSummary(summary);
+    }
+    
+    private void updateBatchStatus(String batchKey, String status, int progress) {
+        try {
+            KiroQcBatchSummary summary = new KiroQcBatchSummary();
+            summary.setBatchKey(batchKey);
+            summary.setStatus(status);
+            summary.setProgress(progress);
+            if ("failed".equals(status)) {
+                summary.setEndTime(new Date());
+            }
+            resultMapper.saveBatchSummary(summary);
+        } catch (Exception e) {
+            log.error("更新批次状态失败: {} - {}", batchKey, e.getMessage());
+        }
+    }
+    
+    private <T> List<List<T>> partitionList(List<T> list, int partitionSize) {
+        List<List<T>> partitions = new ArrayList<>();
+        for (int i = 0; i < list.size(); i += partitionSize) {
+            partitions.add(list.subList(i, Math.min(i + partitionSize, list.size())));
+        }
+        return partitions;
+    }
+    
+    // 批处理结果内部类
+    private static class BatchProcessResult {
+        final List<KiroQcCaseResult> caseResults;
+        final List<KiroQcDefectDetail> defectDetails;
+        
+        BatchProcessResult(List<KiroQcCaseResult> caseResults, List<KiroQcDefectDetail> defectDetails) {
+            this.caseResults = caseResults;
+            this.defectDetails = defectDetails;
+        }
+    }
+}
