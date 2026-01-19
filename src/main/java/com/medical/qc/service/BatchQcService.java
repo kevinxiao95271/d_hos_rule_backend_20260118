@@ -115,7 +115,9 @@ public class BatchQcService {
         int total = records.size();
         int processed = 0;
         int totalDefects = 0;
+        int totalCrossDefects = 0; // 新增：Cross规则违规统计
         BigDecimal totalScoreSum = BigDecimal.ZERO;
+        BigDecimal totalCrossDeduct = BigDecimal.ZERO; // 新增：Cross规则扣分统计
         
         // 批量数据缓冲区
         List<KiroQcCaseResult> caseResultBatch = new ArrayList<>(100);
@@ -130,6 +132,17 @@ public class BatchQcService {
             try {
                 // 执行规则检查
                 List<RuleEngineService.RuleViolation> violations = ruleEngine.checkRecord(record, rules);
+                
+                // 分离普通违规和Cross规则违规
+                int crossViolationCount = 0;
+                BigDecimal crossDeductSum = BigDecimal.ZERO;
+                
+                for (RuleEngineService.RuleViolation v : violations) {
+                    if (v.ruleCode != null && v.ruleCode.startsWith("RULE_CROSS_")) {
+                        crossViolationCount++;
+                        crossDeductSum = crossDeductSum.add(v.deductScore.abs());
+                    }
+                }
                 
                 // 计算得分
                 BigDecimal totalDeduct = BigDecimal.ZERO;
@@ -175,6 +188,8 @@ public class BatchQcService {
                 }
                 
                 totalDefects += violations.size();
+                totalCrossDefects += crossViolationCount; // 新增：累计Cross规则违规数
+                totalCrossDeduct = totalCrossDeduct.add(crossDeductSum); // 新增：累计Cross规则扣分
                 totalScoreSum = totalScoreSum.add(finalScore);
                 
             } catch (Exception e) {
@@ -190,7 +205,7 @@ public class BatchQcService {
                 defectDetailBatch.clear();
                 
                 // 更新进度（每100条更新一次）
-                updateProgress(summary, processed, total, totalDefects, totalScoreSum);
+                updateProgress(summary, processed, total, totalDefects, totalCrossDefects, totalCrossDeduct, totalScoreSum);
             }
         }
     }
@@ -219,7 +234,7 @@ public class BatchQcService {
     }
     
     private void updateProgress(KiroQcBatchSummary summary, int processed, int total, 
-                               int totalDefects, BigDecimal totalScoreSum) {
+                               int totalDefects, int totalCrossDefects, BigDecimal totalCrossDeduct, BigDecimal totalScoreSum) {
         int progress = (int) ((processed * 100.0) / total);
         summary.setProgress(progress);
         summary.setCaseCount(processed);
@@ -228,6 +243,13 @@ public class BatchQcService {
             new BigDecimal(totalDefects).divide(new BigDecimal(processed), 4, RoundingMode.HALF_UP) : BigDecimal.ZERO);
         summary.setAvgScore(processed > 0 ? 
             totalScoreSum.divide(new BigDecimal(processed), 2, RoundingMode.HALF_UP) : new BigDecimal("100"));
+        
+        // 设置Cross规则统计
+        summary.setCrossDefectCount(totalCrossDefects);
+        summary.setCrossTotalDeduct(totalCrossDeduct);
+        summary.setAvgCrossDefect(processed > 0 ? 
+            new BigDecimal(totalCrossDefects).divide(new BigDecimal(processed), 2, RoundingMode.HALF_UP) : BigDecimal.ZERO);
+        
         resultMapper.saveBatchSummary(summary);
     }
     

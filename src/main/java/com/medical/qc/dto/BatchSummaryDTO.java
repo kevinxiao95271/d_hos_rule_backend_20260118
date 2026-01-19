@@ -20,4 +20,9 @@ public class BatchSummaryDTO {
     private Date startTime;
     private Date endTime;
     private Long elapsedSeconds;  // 已执行时间（秒）
+    
+    // Cross规则统计信息
+    private Integer crossDefectCount; // Cross规则违规总数
+    private BigDecimal crossTotalDeduct; // Cross规则总扣分
+    private BigDecimal avgCrossDefect; // 平均Cross规则违规数
 }

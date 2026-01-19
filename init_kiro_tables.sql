@@ -1,4 +1,3 @@
--- 质控规则表
 CREATE TABLE IF NOT EXISTS `kiro_qc_rule` (
   `id` bigint NOT NULL AUTO_INCREMENT,
   `rule_code` varchar(64) NOT NULL COMMENT '规则编码',
@@ -22,6 +21,31 @@ CREATE TABLE IF NOT EXISTS `kiro_qc_rule` (
   KEY `idx_field_code` (`field_code`),
   KEY `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='质控规则表';
+
+-- 交叉质控规则表（专门存放cross_check类规则）
+CREATE TABLE IF NOT EXISTS `kiro_qc_rule_cross` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `rule_code` varchar(64) NOT NULL COMMENT '规则编码',
+  `field_name` varchar(200) DEFAULT NULL COMMENT '字段名称',
+  `field_code` varchar(64) DEFAULT NULL COMMENT '主字段编码',
+  `table_name` varchar(64) DEFAULT NULL COMMENT '主表名',
+  `rule_type` varchar(32) DEFAULT NULL COMMENT '规则类型',
+  `deduct_score` decimal(10,2) DEFAULT '0.00' COMMENT '扣分',
+  `description` text COMMENT '规则描述',
+  `urule_content` text COMMENT 'URule规则内容',
+  `canonical_expr` text COMMENT '规范化表达式',
+  `status` varchar(16) DEFAULT 'draft' COMMENT '状态: draft草稿, active正式',
+  `source_tables` varchar(500) DEFAULT NULL COMMENT '源数据表，多个用逗号分隔',
+  `dict_types` varchar(500) DEFAULT NULL COMMENT '值域数据集，多个用逗号分隔',
+  `involved_tables` varchar(500) DEFAULT NULL COMMENT '涉及的表',
+  `involved_fields` varchar(1000) DEFAULT NULL COMMENT '涉及的字段',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_cross_rule_code` (`rule_code`),
+  KEY `idx_cross_field_code` (`field_code`),
+  KEY `idx_cross_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='交叉质控规则表';
 
 -- 字段映射表
 CREATE TABLE IF NOT EXISTS `kiro_field_mapping` (

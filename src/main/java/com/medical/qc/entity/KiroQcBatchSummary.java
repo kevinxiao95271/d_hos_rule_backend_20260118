@@ -21,4 +21,9 @@ public class KiroQcBatchSummary {
     private Date startTime;
     private Date endTime;
     private Date createdAt;
+    
+    // Cross规则统计字段
+    private Integer crossDefectCount; // Cross规则违规总数
+    private BigDecimal crossTotalDeduct; // Cross规则总扣分
+    private BigDecimal avgCrossDefect; // 平均Cross规则违规数
 }

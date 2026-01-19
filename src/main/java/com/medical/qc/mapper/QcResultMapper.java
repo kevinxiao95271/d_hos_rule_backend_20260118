@@ -36,9 +36,9 @@ public interface QcResultMapper {
             "</script>")
     List<KiroQcCaseResult> findCaseResults(@Param("year") Integer year, @Param("quarter") Integer quarter, @Param("month") Integer month);
     
-    @Insert("INSERT INTO kiro_qc_batch_summary(batch_key, period_type, check_year, check_quarter, check_month, case_count, total_defect_count, avg_defect, avg_score, status, progress, start_time) " +
-            "VALUES(#{batchKey}, #{periodType}, #{checkYear}, #{checkQuarter}, #{checkMonth}, #{caseCount}, #{totalDefectCount}, #{avgDefect}, #{avgScore}, #{status}, #{progress}, #{startTime}) " +
-            "ON DUPLICATE KEY UPDATE case_count=#{caseCount}, total_defect_count=#{totalDefectCount}, avg_defect=#{avgDefect}, avg_score=#{avgScore}, status=#{status}, progress=#{progress}, start_time=#{startTime}, end_time=#{endTime}")
+    @Insert("INSERT INTO kiro_qc_batch_summary(batch_key, period_type, check_year, check_quarter, check_month, case_count, total_defect_count, avg_defect, avg_score, status, progress, start_time, cross_defect_count, cross_total_deduct, avg_cross_defect) " +
+            "VALUES(#{batchKey}, #{periodType}, #{checkYear}, #{checkQuarter}, #{checkMonth}, #{caseCount}, #{totalDefectCount}, #{avgDefect}, #{avgScore}, #{status}, #{progress}, #{startTime}, #{crossDefectCount}, #{crossTotalDeduct}, #{avgCrossDefect}) " +
+            "ON DUPLICATE KEY UPDATE case_count=#{caseCount}, total_defect_count=#{totalDefectCount}, avg_defect=#{avgDefect}, avg_score=#{avgScore}, status=#{status}, progress=#{progress}, start_time=#{startTime}, end_time=#{endTime}, cross_defect_count=#{crossDefectCount}, cross_total_deduct=#{crossTotalDeduct}, avg_cross_defect=#{avgCrossDefect}")
     int saveBatchSummary(KiroQcBatchSummary summary);
     
     @Select("SELECT * FROM kiro_qc_batch_summary WHERE batch_key = #{batchKey}")

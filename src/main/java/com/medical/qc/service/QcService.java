@@ -452,7 +452,20 @@ public class QcService {
         dto.setTotalDeduct(caseResult.getTotalDeduct());
         dto.setFinalScore(caseResult.getFinalScore());
         
-        List<QcResultDTO.DefectDTO> defectList = violations.stream().map(v -> {
+        // 分离普通违规和Cross规则违规
+        List<RuleEngineService.RuleViolation> normalViolations = new ArrayList<>();
+        List<RuleEngineService.RuleViolation> crossViolations = new ArrayList<>();
+        
+        for (RuleEngineService.RuleViolation violation : violations) {
+            if (violation.ruleCode != null && violation.ruleCode.startsWith("RULE_CROSS_")) {
+                crossViolations.add(violation);
+            } else {
+                normalViolations.add(violation);
+            }
+        }
+        
+        // 处理普通违规（保持原有逻辑）
+        List<QcResultDTO.DefectDTO> defectList = normalViolations.stream().map(v -> {
             QcResultDTO.DefectDTO d = new QcResultDTO.DefectDTO();
             d.setFieldCode(v.fieldCode);
             d.setFieldName(v.fieldName);
@@ -464,13 +477,97 @@ public class QcService {
             return d;
         }).collect(Collectors.toList());
         
-        dto.setAllDefects(defectList);
+        // 处理Cross规则违规
+        List<QcResultDTO.CrossDefectDTO> crossDefectList = crossViolations.stream().map(v -> {
+            QcResultDTO.CrossDefectDTO cd = new QcResultDTO.CrossDefectDTO();
+            cd.setRuleCode(v.ruleCode);
+            cd.setRuleDescription(v.ruleDescription);
+            cd.setDeductScore(v.deductScore);
+            
+            // 解析Cross规则类型和涉及字段
+            parseCrossRuleInfo(cd, v);
+            
+            return cd;
+        }).collect(Collectors.toList());
         
+        // 将所有违规合并到allDefects中（保持向后兼容）
+        List<QcResultDTO.DefectDTO> allDefects = new ArrayList<>(defectList);
+        // 将Cross违规也转换为DefectDTO格式加入allDefects
+        crossViolations.forEach(v -> {
+            QcResultDTO.DefectDTO d = new QcResultDTO.DefectDTO();
+            d.setFieldCode(v.fieldCode);
+            d.setFieldName(v.fieldName);
+            d.setRuleCode(v.ruleCode);
+            d.setRuleDescription(v.ruleDescription);
+            d.setActualValue(v.actualValue);
+            d.setExpectedValue(v.expectedValue);
+            d.setDeductScore(v.deductScore);
+            allDefects.add(d);
+        });
+        
+        dto.setAllDefects(allDefects);
+        dto.setCrossDefects(crossDefectList);
+        
+        // 计算Cross规则统计
+        dto.setCrossDefectCount(crossViolations.size());
+        BigDecimal crossTotalDeduct = crossViolations.stream()
+            .map(v -> v.deductScore != null ? v.deductScore.abs() : BigDecimal.ZERO)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+        dto.setCrossTotalDeduct(crossTotalDeduct);
+        
+        // 按字段分组（只包含普通违规）
         Map<String, List<QcResultDTO.DefectDTO>> byField = defectList.stream()
             .collect(Collectors.groupingBy(QcResultDTO.DefectDTO::getFieldCode));
         dto.setDefectsByField(byField);
         
         return dto;
+    }
+    
+    /**
+     * 解析Cross规则信息，填充CrossDefectDTO的详细信息
+     */
+    private void parseCrossRuleInfo(QcResultDTO.CrossDefectDTO crossDefect, RuleEngineService.RuleViolation violation) {
+        String ruleCode = violation.ruleCode;
+        
+        // 根据规则代码解析类型和涉及字段
+        if (ruleCode.contains("TRANSFUSION")) {
+            crossDefect.setCrossType("transfusion_logic");
+            crossDefect.setInvolvedFields(Arrays.asList("输血记录", "血液费用"));
+            crossDefect.setLogicDescription("输血记录与血液费用逻辑不一致");
+            crossDefect.setSeverity("medium");
+            
+            Map<String, String> fieldValues = new HashMap<>();
+            fieldValues.put("输血记录", "存在");
+            fieldValues.put("血液费用", "无");
+            crossDefect.setFieldValues(fieldValues);
+            
+        } else if (ruleCode.contains("FIELD_PAIR")) {
+            crossDefect.setCrossType("field_pair");
+            crossDefect.setLogicDescription("字段配对不匹配");
+            crossDefect.setSeverity("high");
+            
+            // 解析字段配对信息
+            if (ruleCode.contains("C06x01C_C07x01C")) {
+                crossDefect.setInvolvedFields(Arrays.asList("C06x01C", "C07x01C"));
+                crossDefect.setLogicDescription("诊断编码与诊断名称不匹配");
+            } else if (ruleCode.contains("C14x01C_C15x01C")) {
+                crossDefect.setInvolvedFields(Arrays.asList("C14x01C", "C15x01C"));
+                crossDefect.setLogicDescription("手术编码与手术名称不匹配");
+            }
+            
+        } else if (ruleCode.contains("GENDER") || ruleCode.contains("AGE")) {
+            crossDefect.setCrossType("age_gender");
+            crossDefect.setInvolvedFields(Arrays.asList("A12C", "C03C"));
+            crossDefect.setLogicDescription("年龄性别与诊断不匹配");
+            crossDefect.setSeverity("high");
+            
+        } else {
+            // 默认处理
+            crossDefect.setCrossType("logic_check");
+            crossDefect.setInvolvedFields(Arrays.asList(violation.fieldCode));
+            crossDefect.setLogicDescription("跨字段逻辑检查");
+            crossDefect.setSeverity("medium");
+        }
     }
     
     public BatchSummaryDTO getBatchStatus(String batchKey) {
@@ -516,6 +613,11 @@ public class QcService {
         dto.setProgress(summary.getProgress());
         dto.setStartTime(summary.getStartTime());
         dto.setEndTime(summary.getEndTime());
+        
+        // 设置Cross规则统计
+        dto.setCrossDefectCount(summary.getCrossDefectCount());
+        dto.setCrossTotalDeduct(summary.getCrossTotalDeduct());
+        dto.setAvgCrossDefect(summary.getAvgCrossDefect());
         
         // 计算已执行时间（秒）
         if (summary.getStartTime() != null) {

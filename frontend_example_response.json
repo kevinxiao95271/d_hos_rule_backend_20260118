@@ -1,0 +1,204 @@
+{
+  "code": 200,
+  "message": "质控完成",
+  "data": {
+    "mrKey": "445583_1",
+    "a48": "445583",
+    "a49": "1",
+    "b15": "2023/1/1 8:59",
+    "defectCount": 9,
+    "totalDeduct": 24.0,
+    "finalScore": 76.0,
+    "defectsByField": {
+      "C21x01C": [
+        {
+          "fieldCode": "C21x01C",
+          "fieldName": "主要手术操作切口愈合等级",
+          "ruleCode": "C21x01C_value_check",
+          "ruleDescription": "主要手术操作切口愈合等级编码取值不符合国家标准值域定义",
+          "actualValue": "1",
+          "expectedValue": "字典operation_dict_v3中的有效值: 00.0100, 00.0101, 00.0102, 00.0200, 00.0200x001等",
+          "deductScore": 2.0
+        }
+      ],
+      "C14x01C": [
+        {
+          "fieldCode": "C14x01C",
+          "fieldName": "主要手术操作编码 字符 ",
+          "ruleCode": "RULE_C14x01C_RC013",
+          "ruleDescription": "主要手术操作编码 字符 必须在RC027字典范围内",
+          "actualValue": "36.0601",
+          "expectedValue": "字典RC027中的有效值: 1, 2, 3, 4",
+          "deductScore": 1.0
+        }
+      ],
+      "C22x01C": [
+        {
+          "fieldCode": "C22x01C",
+          "fieldName": "主要手术操作麻醉方式",
+          "ruleCode": "RULE_C22x01C_RC013",
+          "ruleDescription": "主要手术操作麻醉方式必须在RC014字典范围内",
+          "actualValue": "99",
+          "expectedValue": "字典RC014中的有效值: 0, 1, 2, 3, 4等",
+          "deductScore": 1.0
+        }
+      ],
+      "A18x01": [
+        {
+          "fieldCode": "A18x01",
+          "fieldName": "新生儿出生体重(克)",
+          "ruleCode": "A18x01_range_check",
+          "ruleDescription": "新生儿出生体重范围：100克-9999克，需为整数且精确到10g",
+          "actualValue": "0",
+          "expectedValue": "100.0-9999.0",
+          "deductScore": 4.0
+        }
+      ],
+      "A18x02": [
+        {
+          "fieldCode": "A18x02",
+          "fieldName": "新生儿出生体重(克)2",
+          "ruleCode": "A18x02_range_check",
+          "ruleDescription": "新生儿出生体重2范围：100克-9999克，需为整数且精确到10g",
+          "actualValue": "0",
+          "expectedValue": "2.0-9999.0",
+          "deductScore": 4.0
+        }
+      ],
+      "A18x03": [
+        {
+          "fieldCode": "A18x03",
+          "fieldName": "新生儿出生体重(克)3",
+          "ruleCode": "A18x03_range_check",
+          "ruleDescription": "新生儿出生体重3范围：100克-9999克，需为整数且精确到10g",
+          "actualValue": "0",
+          "expectedValue": "3.0-9999.0",
+          "deductScore": 4.0
+        }
+      ],
+      "A18x04": [
+        {
+          "fieldCode": "A18x04",
+          "fieldName": "新生儿出生体重(克)4",
+          "ruleCode": "A18x04_range_check",
+          "ruleDescription": "新生儿出生体重4范围：100克-9999克，需为整数且精确到10g",
+          "actualValue": "0",
+          "expectedValue": "4.0-9999.0",
+          "deductScore": 4.0
+        }
+      ],
+      "A18x05": [
+        {
+          "fieldCode": "A18x05",
+          "fieldName": "新生儿出生体重(克)5",
+          "ruleCode": "A18x05_range_check",
+          "ruleDescription": "新生儿出生体重5范围：100克-9999克，需为整数且精确到10g",
+          "actualValue": "0",
+          "expectedValue": "5.0-9999.0",
+          "deductScore": 4.0
+        }
+      ]
+    },
+    "allDefects": [
+      {
+        "fieldCode": "A18x01",
+        "fieldName": "新生儿出生体重(克)",
+        "ruleCode": "A18x01_range_check",
+        "ruleDescription": "新生儿出生体重范围：100克-9999克，需为整数且精确到10g",
+        "actualValue": "0",
+        "expectedValue": "100.0-9999.0",
+        "deductScore": 4.0
+      },
+      {
+        "fieldCode": "A18x02",
+        "fieldName": "新生儿出生体重(克)2",
+        "ruleCode": "A18x02_range_check",
+        "ruleDescription": "新生儿出生体重2范围：100克-9999克，需为整数且精确到10g",
+        "actualValue": "0",
+        "expectedValue": "2.0-9999.0",
+        "deductScore": 4.0
+      },
+      {
+        "fieldCode": "A18x03",
+        "fieldName": "新生儿出生体重(克)3",
+        "ruleCode": "A18x03_range_check",
+        "ruleDescription": "新生儿出生体重3范围：100克-9999克，需为整数且精确到10g",
+        "actualValue": "0",
+        "expectedValue": "3.0-9999.0",
+        "deductScore": 4.0
+      },
+      {
+        "fieldCode": "A18x04",
+        "fieldName": "新生儿出生体重(克)4",
+        "ruleCode": "A18x04_range_check",
+        "ruleDescription": "新生儿出生体重4范围：100克-9999克，需为整数且精确到10g",
+        "actualValue": "0",
+        "expectedValue": "4.0-9999.0",
+        "deductScore": 4.0
+      },
+      {
+        "fieldCode": "A18x05",
+        "fieldName": "新生儿出生体重(克)5",
+        "ruleCode": "A18x05_range_check",
+        "ruleDescription": "新生儿出生体重5范围：100克-9999克，需为整数且精确到10g",
+        "actualValue": "0",
+        "expectedValue": "5.0-9999.0",
+        "deductScore": 4.0
+      },
+      {
+        "fieldCode": "C22x01C",
+        "fieldName": "主要手术操作麻醉方式",
+        "ruleCode": "RULE_C22x01C_RC013",
+        "ruleDescription": "主要手术操作麻醉方式必须在RC014字典范围内",
+        "actualValue": "99",
+        "expectedValue": "字典RC014中的有效值: 0, 1, 2, 3, 4等",
+        "deductScore": 1.0
+      },
+      {
+        "fieldCode": "C14x01C",
+        "fieldName": "主要手术操作编码 字符 ",
+        "ruleCode": "RULE_C14x01C_RC013",
+        "ruleDescription": "主要手术操作编码 字符 必须在RC027字典范围内",
+        "actualValue": "36.0601",
+        "expectedValue": "字典RC027中的有效值: 1, 2, 3, 4",
+        "deductScore": 1.0
+      },
+      {
+        "fieldCode": "C21x01C",
+        "fieldName": "主要手术操作切口愈合等级",
+        "ruleCode": "C21x01C_value_check",
+        "ruleDescription": "主要手术操作切口愈合等级编码取值不符合国家标准值域定义",
+        "actualValue": "1",
+        "expectedValue": "字典operation_dict_v3中的有效值: 00.0100, 00.0101, 00.0102, 00.0200, 00.0200x001等",
+        "deductScore": 2.0
+      },
+      {
+        "fieldCode": "D26",
+        "fieldName": "血费",
+        "ruleCode": "RULE_CROSS_D26_TRANSFUSION_FEE1",
+        "ruleDescription": "存在输血记录，未发生血液费用",
+        "actualValue": "有输血记录但无血费",
+        "expectedValue": "输血记录与血费保持一致",
+        "deductScore": 0.0
+      }
+    ],
+    "crossDefects": [
+      {
+        "ruleCode": "RULE_CROSS_D26_TRANSFUSION_FEE1",
+        "ruleDescription": "存在输血记录，未发生血液费用",
+        "crossType": "transfusion_logic",
+        "involvedFields": [
+          "输血记录",
+          "血液费用"
+        ],
+        "fieldValues": {
+          "输血记录": "存在",
+          "血液费用": "无"
+        },
+        "logicDescription": "输血记录与血液费用逻辑不一致",
+        "deductScore": 0.0,
+        "severity": "medium"
+      }
+    ]
+  }
+}

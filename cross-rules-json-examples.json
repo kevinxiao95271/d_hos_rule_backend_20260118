@@ -1,0 +1,274 @@
+{
+  "description": "Cross规则与普通规则JSON结构对比示例",
+  "apiEndpoint": "POST /api/qc/check/single?a48=445583&a49=1",
+  "responseStructure": {
+    "code": 200,
+    "message": "质控完成",
+    "data": {
+      "mrKey": "445583_1",
+      "defectCount": 9,
+      "totalDeduct": 24.0,
+      "finalScore": 76.0,
+      "crossDefectCount": 1,
+      "crossTotalDeduct": 0.0,
+      
+      "comment": "=== 普通规则违规 (allDefects数组中) ===",
+      "allDefects": [
+        {
+          "fieldCode": "A18x01",
+          "fieldName": "新生儿出生体重(克)",
+          "ruleCode": "A18x01_range_check",
+          "ruleDescription": "新生儿出生体重范围检查",
+          "actualValue": "0",
+          "expectedValue": "100.0-9999.0",
+          "deductScore": 4.0,
+          "comment": "普通规则：单个字段值不符合要求"
+        },
+        {
+          "fieldCode": "A18x02",
+          "fieldName": "新生儿出生体重(克)2",
+          "ruleCode": "A18x02_range_check",
+          "ruleDescription": "新生儿出生体重范围检查2",
+          "actualValue": "0",
+          "expectedValue": "2.0-9999.0",
+          "deductScore": 4.0,
+          "comment": "普通规则：单个字段值不符合要求"
+        }
+      ],
+      
+      "comment2": "=== Cross规则违规 (crossDefects数组中) ===",
+      "crossDefects": [
+        {
+          "ruleCode": "RULE_CROSS_D26_TRANSFUSION_FEE1",
+          "ruleDescription": "存在输血记录，未发生血液费用",
+          "crossType": "transfusion_logic",
+          "involvedFields": ["输血记录", "血液费用"],
+          "fieldValues": {
+            "输血记录": "存在",
+            "血液费用": "无"
+          },
+          "logicDescription": "输血记录与血液费用逻辑不一致",
+          "deductScore": 0.0,
+          "severity": "medium",
+          "comment": "Cross规则：多个字段间逻辑关系不一致"
+        }
+      ],
+      
+      "defectsByField": {
+        "A18x01": [
+          {
+            "fieldCode": "A18x01",
+            "fieldName": "新生儿出生体重(克)",
+            "ruleCode": "A18x01_range_check",
+            "ruleDescription": "新生儿出生体重范围检查",
+            "actualValue": "0",
+            "expectedValue": "100.0-9999.0",
+            "deductScore": 4.0
+          }
+        ],
+        "comment": "注意：defectsByField只包含普通规则违规，不包含Cross规则"
+      }
+    }
+  },
+  
+  "fieldStructureComparison": {
+    "normalDefect": {
+      "description": "普通规则违规 - 单字段问题",
+      "keyFields": {
+        "fieldCode": "具体违规的字段代码",
+        "fieldName": "具体违规的字段名称", 
+        "actualValue": "字段的实际值（问题所在）",
+        "expectedValue": "字段的期望值或范围",
+        "ruleCode": "规则代码",
+        "ruleDescription": "规则描述",
+        "deductScore": "扣分"
+      },
+      "characteristics": [
+        "针对单个字段",
+        "有明确的实际值和期望值",
+        "问题直观易懂",
+        "可以直接定位到具体字段"
+      ]
+    },
+    
+    "crossDefect": {
+      "description": "Cross规则违规 - 多字段逻辑问题",
+      "keyFields": {
+        "ruleCode": "Cross规则代码（以RULE_CROSS_开头）",
+        "ruleDescription": "Cross规则描述",
+        "crossType": "Cross规则类型（如transfusion_logic）",
+        "involvedFields": "涉及的多个字段名称数组",
+        "fieldValues": "各字段的实际值对象",
+        "logicDescription": "逻辑关系描述",
+        "deductScore": "扣分",
+        "severity": "严重程度（low/medium/high）"
+      },
+      "characteristics": [
+        "涉及多个字段",
+        "没有单一的actualValue/expectedValue",
+        "重点是字段间的逻辑关系",
+        "需要展示多个字段的组合情况"
+      ]
+    }
+  },
+  
+  "crossRuleTypes": {
+    "transfusion_logic": {
+      "description": "输血逻辑检查",
+      "example": {
+        "ruleCode": "RULE_CROSS_D26_TRANSFUSION_FEE1",
+        "ruleDescription": "存在输血记录，未发生血液费用",
+        "crossType": "transfusion_logic",
+        "involvedFields": ["输血记录", "血液费用"],
+        "fieldValues": {
+          "输血记录": "存在",
+          "血液费用": "无"
+        },
+        "logicDescription": "输血记录与血液费用逻辑不一致",
+        "severity": "medium"
+      }
+    },
+    
+    "field_pair": {
+      "description": "字段配对检查",
+      "example": {
+        "ruleCode": "RULE_CROSS_FIELD_PAIR_C06C07",
+        "ruleDescription": "诊断编码与诊断名称不匹配",
+        "crossType": "field_pair",
+        "involvedFields": ["C06x01C", "C07x01C"],
+        "fieldValues": {
+          "C06x01C": "I10.x00",
+          "C07x01C": ""
+        },
+        "logicDescription": "诊断编码已填写但诊断名称为空",
+        "severity": "high"
+      }
+    },
+    
+    "age_diagnosis": {
+      "description": "年龄诊断匹配",
+      "example": {
+        "ruleCode": "RULE_CROSS_AGE_DIAGNOSIS_001",
+        "ruleDescription": "年龄与诊断不匹配",
+        "crossType": "age_diagnosis",
+        "involvedFields": ["A02", "C06x01C"],
+        "fieldValues": {
+          "A02": "5",
+          "C06x01C": "I25.100"
+        },
+        "logicDescription": "5岁患者不应有冠心病诊断",
+        "severity": "high"
+      }
+    },
+    
+    "conditional_required": {
+      "description": "条件必填检查",
+      "example": {
+        "ruleCode": "RULE_CROSS_CONDITIONAL_REQUIRED_001",
+        "ruleDescription": "手术时麻醉方式必填",
+        "crossType": "conditional_required",
+        "involvedFields": ["C14x01C", "C23x01C"],
+        "fieldValues": {
+          "C14x01C": "64.00x002",
+          "C23x01C": ""
+        },
+        "logicDescription": "存在手术记录时麻醉方式不能为空",
+        "severity": "medium"
+      }
+    },
+    
+    "age_gender": {
+      "description": "年龄性别逻辑",
+      "example": {
+        "ruleCode": "RULE_CROSS_AGE_GENDER_001",
+        "ruleDescription": "年龄性别逻辑不符",
+        "crossType": "age_gender",
+        "involvedFields": ["A02", "A03", "C06x01C"],
+        "fieldValues": {
+          "A02": "30",
+          "A03": "1",
+          "C06x01C": "N80.100"
+        },
+        "logicDescription": "男性患者不应有妇科疾病诊断",
+        "severity": "high"
+      }
+    },
+    
+    "date_consistency": {
+      "description": "日期一致性检查",
+      "example": {
+        "ruleCode": "RULE_CROSS_DATE_CONSISTENCY_001",
+        "ruleDescription": "入院出院日期逻辑错误",
+        "crossType": "date_consistency",
+        "involvedFields": ["B11", "B15"],
+        "fieldValues": {
+          "B11": "2023-05-15",
+          "B15": "2023-05-10"
+        },
+        "logicDescription": "出院日期不能早于入院日期",
+        "severity": "high"
+      }
+    }
+  },
+  
+  "frontendUsageGuide": {
+    "dataExtraction": {
+      "normalDefects": "从 allDefects 中过滤出不以 'RULE_CROSS_' 开头的规则",
+      "crossDefects": "直接使用 crossDefects 数组",
+      "fieldMapping": "普通规则用 fieldCode，Cross规则用 involvedFields"
+    },
+    
+    "displayDifferences": {
+      "normalDefect": {
+        "title": "使用 fieldName",
+        "problem": "显示 actualValue vs expectedValue",
+        "location": "可以精确定位到具体字段"
+      },
+      "crossDefect": {
+        "title": "使用 ruleDescription",
+        "problem": "显示 logicDescription",
+        "location": "需要展示多个相关字段"
+      }
+    },
+    
+    "uiRecommendations": {
+      "normalDefect": [
+        "使用红色边框突出问题字段",
+        "显示实际值与期望值的对比",
+        "可以直接跳转到对应字段进行修改"
+      ],
+      "crossDefect": [
+        "使用蓝色边框表示逻辑问题",
+        "展示所有相关字段的当前值",
+        "提供逻辑关系的详细说明",
+        "使用严重程度标识（颜色编码）"
+      ]
+    }
+  },
+  
+  "batchQcExample": {
+    "description": "批量质控中的Cross规则统计",
+    "apiEndpoint": "POST /api/qc/check/batch",
+    "responseStructure": {
+      "code": 200,
+      "message": "批量质控完成",
+      "data": {
+        "batchKey": "2023_M1",
+        "caseCount": 94,
+        "totalDefectCount": 156,
+        "avgDefect": 1.66,
+        "avgScore": 92.5,
+        "crossDefectCount": 12,
+        "crossTotalDeduct": 15.5,
+        "avgCrossDefect": 0.13,
+        "comment": "批量质控只返回统计数据，不返回具体的违规详情"
+      }
+    },
+    "statisticsExplanation": {
+      "totalDefectCount": "所有违规总数（包括普通规则和Cross规则）",
+      "crossDefectCount": "Cross规则违规总数",
+      "normalDefectCount": "totalDefectCount - crossDefectCount = 普通规则违规总数",
+      "crossRatio": "(crossDefectCount / totalDefectCount) * 100 = Cross规则占比"
+    }
+  }
+}
