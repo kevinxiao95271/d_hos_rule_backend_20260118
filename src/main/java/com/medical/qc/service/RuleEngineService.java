@@ -972,8 +972,370 @@ public class RuleEngineService {
      * 检查逻辑规则
      */
     private RuleViolation checkLogicRule(Map<String, Object> record, KiroQcRuleCross crossRule) {
-        // TODO: 实现复杂逻辑检查
+        try {
+            String primaryField = crossRule.getPrimaryField();
+            Object primaryValue = getFieldValue(record, primaryField);
+            
+            // 解析约束条件
+            Map<String, Object> constraints = objectMapper.readValue(
+                crossRule.getConstraintConditions(),
+                new TypeReference<Map<String, Object>>() {}
+            );
+            
+            String logicType = (String) constraints.get("logic_type");
+            
+            // 根据逻辑类型分发处理
+            switch (logicType) {
+                case "surgery_code_name_match":
+                    return checkSurgeryCodeNameMatchLogic(record, crossRule, constraints);
+                case "surgery_anesthesia_required":
+                    return checkSurgeryAnesthesiaRequiredLogic(record, crossRule, constraints);
+                case "surgery_surgeon_required":
+                    return checkSurgerySurgeonRequiredLogic(record, crossRule, constraints);
+                case "surgery_complexity_match":
+                    return checkSurgeryComplexityMatchLogic(record, crossRule, constraints);
+                default:
+                    log.warn("未知的逻辑规则类型: {} (规则: {})", logicType, crossRule.getRuleCode());
+                    return null;
+            }
+            
+        } catch (Exception e) {
+            log.error("逻辑规则检查失败: {} - {}", crossRule.getRuleCode(), e.getMessage());
+            return null;
+        }
+    }
+    
+    /**
+     * 检查手术编码与名称匹配逻辑
+     */
+    private RuleViolation checkSurgeryCodeNameMatchLogic(Map<String, Object> record, KiroQcRuleCross crossRule, Map<String, Object> constraints) {
+        try {
+            String primaryField = crossRule.getPrimaryField();
+            Object primaryValue = getFieldValue(record, primaryField);
+            
+            // 解析相关字段
+            List<Map<String, Object>> relatedFields = objectMapper.readValue(
+                crossRule.getRelatedFields(), 
+                new TypeReference<List<Map<String, Object>>>() {}
+            );
+            
+            // 检查每个手术编码-名称对
+            for (Map<String, Object> fieldPair : relatedFields) {
+                String codeField = (String) fieldPair.get("code_field");
+                String nameField = (String) fieldPair.get("name_field");
+                
+                if (codeField == null || nameField == null) continue;
+                
+                Object codeValue = getFieldValue(record, codeField);
+                Object nameValue = getFieldValue(record, nameField);
+                
+                // 如果编码和名称都为空，跳过检查
+                if (isNullOrEmpty(codeValue) && isNullOrEmpty(nameValue)) {
+                    continue;
+                }
+                
+                // 如果编码有值但名称为空
+                if (!isNullOrEmpty(codeValue) && isNullOrEmpty(nameValue)) {
+                    RuleViolation violation = new RuleViolation();
+                    violation.ruleCode = crossRule.getRuleCode();
+                    violation.fieldCode = nameField;
+                    violation.fieldName = getFieldDisplayName(nameField);
+                    violation.actualValue = "空";
+                    violation.expectedValue = "与手术编码 " + codeValue + " 对应的手术名称";
+                    violation.ruleDescription = crossRule.getDescription();
+                    violation.deductScore = crossRule.getDeductScore();
+                    violation.ruleId = crossRule.getId();
+                    return violation;
+                }
+                
+                // 如果名称有值但编码为空
+                if (isNullOrEmpty(codeValue) && !isNullOrEmpty(nameValue)) {
+                    RuleViolation violation = new RuleViolation();
+                    violation.ruleCode = crossRule.getRuleCode();
+                    violation.fieldCode = codeField;
+                    violation.fieldName = getFieldDisplayName(codeField);
+                    violation.actualValue = "空";
+                    violation.expectedValue = "与手术名称 " + nameValue + " 对应的手术编码";
+                    violation.ruleDescription = crossRule.getDescription();
+                    violation.deductScore = crossRule.getDeductScore();
+                    violation.ruleId = crossRule.getId();
+                    return violation;
+                }
+                
+                // 如果编码和名称都有值，检查是否匹配
+                if (!isNullOrEmpty(codeValue) && !isNullOrEmpty(nameValue)) {
+                    String code = codeValue.toString();
+                    String name = nameValue.toString();
+                    
+                    // 使用字典验证编码与名称的匹配性
+                    if (!isSurgeryCodeNameMatch(code, name)) {
+                        String correctName = getSurgeryNameByCode(code);
+                        RuleViolation violation = new RuleViolation();
+                        violation.ruleCode = crossRule.getRuleCode();
+                        violation.fieldCode = nameField;
+                        violation.fieldName = getFieldDisplayName(nameField);
+                        violation.actualValue = name;
+                        violation.expectedValue = correctName != null ? correctName : "与编码匹配的正确名称";
+                        violation.ruleDescription = crossRule.getDescription();
+                        violation.deductScore = crossRule.getDeductScore();
+                        violation.ruleId = crossRule.getId();
+                        return violation;
+                    }
+                }
+            }
+            
+        } catch (Exception e) {
+            log.error("手术编码名称匹配检查失败: {} - {}", crossRule.getRuleCode(), e.getMessage());
+        }
+        
         return null;
+    }
+    
+    /**
+     * 检查手术麻醉方式必填逻辑
+     */
+    private RuleViolation checkSurgeryAnesthesiaRequiredLogic(Map<String, Object> record, KiroQcRuleCross crossRule, Map<String, Object> constraints) {
+        try {
+            // 解析相关字段
+            List<Map<String, Object>> relatedFields = objectMapper.readValue(
+                crossRule.getRelatedFields(), 
+                new TypeReference<List<Map<String, Object>>>() {}
+            );
+            
+            // 检查每个手术-麻醉方式对
+            for (Map<String, Object> fieldPair : relatedFields) {
+                String surgeryCodeField = (String) fieldPair.get("surgery_code_field");
+                String anesthesiaField = (String) fieldPair.get("anesthesia_field");
+                
+                if (surgeryCodeField == null || anesthesiaField == null) continue;
+                
+                Object surgeryCodeValue = getFieldValue(record, surgeryCodeField);
+                Object anesthesiaValue = getFieldValue(record, anesthesiaField);
+                
+                // 如果有手术编码但无麻醉方式
+                if (!isNullOrEmpty(surgeryCodeValue) && isNullOrEmpty(anesthesiaValue)) {
+                    RuleViolation violation = new RuleViolation();
+                    violation.ruleCode = crossRule.getRuleCode();
+                    violation.fieldCode = anesthesiaField;
+                    violation.fieldName = getFieldDisplayName(anesthesiaField);
+                    violation.actualValue = "空";
+                    violation.expectedValue = "必填的麻醉方式";
+                    violation.ruleDescription = crossRule.getDescription();
+                    violation.deductScore = crossRule.getDeductScore();
+                    violation.ruleId = crossRule.getId();
+                    return violation;
+                }
+                
+                // 如果有麻醉方式，验证其有效性
+                if (!isNullOrEmpty(anesthesiaValue)) {
+                    String anesthesia = anesthesiaValue.toString();
+                    if (!isValidAnesthesiaType(anesthesia)) {
+                        RuleViolation violation = new RuleViolation();
+                        violation.ruleCode = crossRule.getRuleCode();
+                        violation.fieldCode = anesthesiaField;
+                        violation.fieldName = getFieldDisplayName(anesthesiaField);
+                        violation.actualValue = anesthesia;
+                        violation.expectedValue = "有效的麻醉方式";
+                        violation.ruleDescription = crossRule.getDescription();
+                        violation.deductScore = crossRule.getDeductScore();
+                        violation.ruleId = crossRule.getId();
+                        return violation;
+                    }
+                }
+            }
+            
+        } catch (Exception e) {
+            log.error("手术麻醉方式必填检查失败: {} - {}", crossRule.getRuleCode(), e.getMessage());
+        }
+        
+        return null;
+    }
+    
+    /**
+     * 检查手术医师必填逻辑
+     */
+    private RuleViolation checkSurgerySurgeonRequiredLogic(Map<String, Object> record, KiroQcRuleCross crossRule, Map<String, Object> constraints) {
+        try {
+            // 解析相关字段
+            List<Map<String, Object>> relatedFields = objectMapper.readValue(
+                crossRule.getRelatedFields(), 
+                new TypeReference<List<Map<String, Object>>>() {}
+            );
+            
+            // 检查每个手术-医师对
+            for (Map<String, Object> fieldPair : relatedFields) {
+                String surgeryCodeField = (String) fieldPair.get("surgery_code_field");
+                String surgeonField = (String) fieldPair.get("surgeon_field");
+                
+                if (surgeryCodeField == null || surgeonField == null) continue;
+                
+                Object surgeryCodeValue = getFieldValue(record, surgeryCodeField);
+                Object surgeonValue = getFieldValue(record, surgeonField);
+                
+                // 如果有手术编码但无主刀医师
+                if (!isNullOrEmpty(surgeryCodeValue) && isNullOrEmpty(surgeonValue)) {
+                    RuleViolation violation = new RuleViolation();
+                    violation.ruleCode = crossRule.getRuleCode();
+                    violation.fieldCode = surgeonField;
+                    violation.fieldName = getFieldDisplayName(surgeonField);
+                    violation.actualValue = "空";
+                    violation.expectedValue = "必填的主刀医师";
+                    violation.ruleDescription = crossRule.getDescription();
+                    violation.deductScore = crossRule.getDeductScore();
+                    violation.ruleId = crossRule.getId();
+                    return violation;
+                }
+            }
+            
+        } catch (Exception e) {
+            log.error("手术医师必填检查失败: {} - {}", crossRule.getRuleCode(), e.getMessage());
+        }
+        
+        return null;
+    }
+    
+    /**
+     * 检查手术复杂度匹配逻辑
+     */
+    private RuleViolation checkSurgeryComplexityMatchLogic(Map<String, Object> record, KiroQcRuleCross crossRule, Map<String, Object> constraints) {
+        try {
+            // 解析相关字段
+            List<Map<String, Object>> relatedFields = objectMapper.readValue(
+                crossRule.getRelatedFields(), 
+                new TypeReference<List<Map<String, Object>>>() {}
+            );
+            
+            // 检查每个手术-复杂度对
+            for (Map<String, Object> fieldPair : relatedFields) {
+                String surgeryCodeField = (String) fieldPair.get("surgery_code_field");
+                String complexityField = (String) fieldPair.get("complexity_field");
+                
+                if (surgeryCodeField == null || complexityField == null) continue;
+                
+                Object surgeryCodeValue = getFieldValue(record, surgeryCodeField);
+                Object complexityValue = getFieldValue(record, complexityField);
+                
+                // 如果有手术编码但无复杂度
+                if (!isNullOrEmpty(surgeryCodeValue) && isNullOrEmpty(complexityValue)) {
+                    RuleViolation violation = new RuleViolation();
+                    violation.ruleCode = crossRule.getRuleCode();
+                    violation.fieldCode = complexityField;
+                    violation.fieldName = getFieldDisplayName(complexityField);
+                    violation.actualValue = "空";
+                    violation.expectedValue = "必填的手术复杂度";
+                    violation.ruleDescription = crossRule.getDescription();
+                    violation.deductScore = crossRule.getDeductScore();
+                    violation.ruleId = crossRule.getId();
+                    return violation;
+                }
+                
+                // 如果都有值，检查复杂度是否匹配
+                if (!isNullOrEmpty(surgeryCodeValue) && !isNullOrEmpty(complexityValue)) {
+                    String surgeryCode = surgeryCodeValue.toString();
+                    String declaredComplexity = complexityValue.toString();
+                    
+                    String actualComplexity = getSurgeryComplexityLevel(surgeryCode);
+                    if (actualComplexity != null && !actualComplexity.equals(declaredComplexity)) {
+                        RuleViolation violation = new RuleViolation();
+                        violation.ruleCode = crossRule.getRuleCode();
+                        violation.fieldCode = complexityField;
+                        violation.fieldName = getFieldDisplayName(complexityField);
+                        violation.actualValue = declaredComplexity;
+                        violation.expectedValue = actualComplexity;
+                        violation.ruleDescription = crossRule.getDescription();
+                        violation.deductScore = crossRule.getDeductScore();
+                        violation.ruleId = crossRule.getId();
+                        return violation;
+                    }
+                }
+            }
+            
+        } catch (Exception e) {
+            log.error("手术复杂度匹配检查失败: {} - {}", crossRule.getRuleCode(), e.getMessage());
+        }
+        
+        return null;
+    }
+    
+    /**
+     * 验证手术编码与名称是否匹配
+     */
+    private boolean isSurgeryCodeNameMatch(String surgeryCode, String surgeryName) {
+        try {
+            // 使用字典缓存验证编码与名称的匹配性
+            return dictMemoryCache.validateCodeNameMatch("SURGERY_CODE", surgeryCode, surgeryName);
+        } catch (Exception e) {
+            log.error("验证手术编码名称匹配失败: {} - {}", surgeryCode, e.getMessage());
+            return true; // 默认通过，避免误报
+        }
+    }
+    
+    /**
+     * 根据手术编码获取手术名称
+     */
+    private String getSurgeryNameByCode(String surgeryCode) {
+        try {
+            List<Map<String, Object>> dictItems = dictMemoryCache.getDictsByType("SURGERY_CODE");
+            for (Map<String, Object> item : dictItems) {
+                if (surgeryCode.equals(item.get("dict_code"))) {
+                    return (String) item.get("dict_name");
+                }
+            }
+        } catch (Exception e) {
+            log.error("获取手术名称失败: {} - {}", surgeryCode, e.getMessage());
+        }
+        return null;
+    }
+    
+    /**
+     * 验证麻醉方式是否有效
+     */
+    private boolean isValidAnesthesiaType(String anesthesiaType) {
+        try {
+            return dictMemoryCache.validateFieldValue("ANESTHESIA_TYPE", anesthesiaType);
+        } catch (Exception e) {
+            log.error("验证麻醉方式失败: {} - {}", anesthesiaType, e.getMessage());
+            return true; // 默认通过
+        }
+    }
+    
+    /**
+     * 获取手术的复杂度等级
+     */
+    private String getSurgeryComplexityLevel(String surgeryCode) {
+        try {
+            List<Map<String, Object>> dictItems = dictMemoryCache.getDictsByType("SURGERY_COMPLEXITY");
+            for (Map<String, Object> item : dictItems) {
+                if (surgeryCode.equals(item.get("surgery_code"))) {
+                    return (String) item.get("complexity_level");
+                }
+            }
+        } catch (Exception e) {
+            log.error("获取手术复杂度失败: {} - {}", surgeryCode, e.getMessage());
+        }
+        return null;
+    }
+    
+    /**
+     * 获取字段显示名称
+     */
+    private String getFieldDisplayName(String fieldCode) {
+        // 根据字段代码返回显示名称
+        switch (fieldCode) {
+            case "C14x01C": return "手术编码1";
+            case "C14x02C": return "手术编码2";
+            case "C14x03C": return "手术编码3";
+            case "C15x01C": return "手术名称1";
+            case "C15x02C": return "手术名称2";
+            case "C15x03C": return "手术名称3";
+            case "C23x01C": return "麻醉方式1";
+            case "C23x02C": return "麻醉方式2";
+            case "C23x03C": return "麻醉方式3";
+            case "C16x01C": return "主刀医师1";
+            case "C16x02C": return "主刀医师2";
+            case "C16x03C": return "主刀医师3";
+            default: return fieldCode;
+        }
     }
     
     /**

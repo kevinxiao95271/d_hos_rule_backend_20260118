@@ -123,6 +123,30 @@ public class DictMemoryCacheService {
     }
 
     /**
+     * 验证编码与名称是否匹配
+     */
+    public boolean validateCodeNameMatch(String dictType, String code, String name) {
+        if (code == null || name == null) {
+            return false;
+        }
+        
+        List<Map<String, Object>> items = getDictsByType(dictType);
+        if (items == null || items.isEmpty()) {
+            return false;
+        }
+        
+        for (Map<String, Object> item : items) {
+            Object dictCode = item.get("dict_code");
+            if (dictCode != null && code.equals(dictCode.toString())) {
+                Object dictName = item.get("dict_name");
+                return dictName != null && name.equals(dictName.toString());
+            }
+        }
+        
+        return false;
+    }
+
+    /**
      * 清除所有缓存
      */
     public void clearAll() {
